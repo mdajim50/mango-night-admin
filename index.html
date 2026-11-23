@@ -1,0 +1,475 @@
+
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mango Night Admin Panel</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0b1020;color:#f5f7ff;font-family:Arial,sans-serif}
+header{background:#151e34;padding:18px;display:flex;justify-content:space-between;align-items:center}
+h1{font-size:21px;margin:0;color:#ffd166}
+main{max-width:1100px;margin:auto;padding:18px}
+.card{background:#151e34;border:1px solid #293653;border-radius:14px;padding:17px;margin-bottom:15px}
+input,textarea,select{width:100%;padding:12px;margin:7px 0 12px;border-radius:8px;border:1px solid #394967;background:#0c1427;color:white}
+textarea{min-height:70px}
+button{background:#ffd166;color:#171717;border:0;border-radius:8px;padding:11px 15px;font-weight:bold;cursor:pointer;margin:4px}
+button.secondary{background:#34425e;color:white}
+button.danger{background:#d94b5b;color:white}
+button:disabled{opacity:.5}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px}
+.stat{background:#202d49;padding:16px;border-radius:12px}
+.stat strong{font-size:26px;display:block;color:#ffd166;margin-top:8px}
+.hidden{display:none!important}
+.muted{color:#aab6ce;font-size:13px}
+.video{border-bottom:1px solid #34425e;padding:12px 0}
+.taskbox{background:#0d172b;padding:12px;border-radius:10px;margin:10px 0}
+label{font-size:13px;color:#c4cee0}
+#message{padding:10px;color:#ffd166}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🌙 Mango Night Admin</h1>
+  <button class="secondary hidden" id="logoutBtn" onclick="logout()">Logout</button>
+</header>
+
+<main>
+<div id="message"></div>
+
+<section id="loginSection" class="card">
+  <h2>Admin Login</h2>
+  <label>Email</label>
+  <input id="email" type="email" placeholder="Admin email">
+  <label>Password</label>
+  <input id="password" type="password" placeholder="Password">
+  <button onclick="login()">Login</button>
+  <p class="muted">শুধু অনুমোদিত Admin অ্যাকাউন্ট দিয়ে লগইন করুন।</p>
+</section>
+
+<section id="panel" class="hidden">
+  <h2>Dashboard</h2>
+  <div class="grid">
+    <div class="stat">Total Videos<strong id="videoCount">0</strong></div>
+    <div class="stat">Published<strong id="publishedCount">0</strong></div>
+    <div class="stat">Total Users<strong id="userCount">0</strong></div>
+    <div class="stat">Task Completions<strong id="completionCount">0</strong></div>
+  </div>
+
+  <div class="card">
+    <h2 id="videoFormTitle">নতুন ভিডিও যোগ করুন</h2>
+    <input type="hidden" id="videoId">
+
+    <label>ভিডিওর নাম</label>
+    <input id="title" placeholder="ভিডিওর নাম">
+
+    <label>বিবরণ</label>
+    <textarea id="description" placeholder="ভিডিওর বিবরণ"></textarea>
+
+    <label>Thumbnail URL</label>
+    <input id="thumbnail" placeholder="https://example.com/image.jpg">
+
+    <label>Video URL</label>
+    <input id="videoUrl" placeholder="ভিডিওর লিংক">
+
+    <label>Download URL</label>
+    <input id="downloadUrl" placeholder="ডাউনলোড লিংক">
+
+    <label>Sort Order</label>
+    <input id="sortOrder" type="number" value="0">
+
+    <label><input id="published" type="checkbox" style="width:auto"> Publish করুন</label>
+    <br>
+    <button onclick="saveVideo()">ভিডিও Save করুন</button>
+    <button class="secondary" onclick="clearForm()">Clear</button>
+  </div>
+
+  <div class="card">
+    <h2>ভিডিও ম্যানেজমেন্ট</h2>
+    <div id="videoList">লোড হচ্ছে...</div>
+  </div>
+
+  <div class="card">
+    <h2>Task Management</h2>
+    <p class="muted">একটি ভিডিও নির্বাচন করে তার চারটি Task সেট করুন।</p>
+    <select id="taskVideo" onchange="loadTasks()">
+      <option value="">ভিডিও নির্বাচন করুন</option>
+    </select>
+    <div id="taskEditor"></div>
+    <button onclick="saveTasks()">৪টি Task Save করুন</button>
+  </div>
+
+  <div class="card">
+    <h2>ইউজার তালিকা</h2>
+    <button class="secondary" onclick="loadUsers()">Refresh Users</button>
+    <div id="userList"></div>
+  </div>
+
+  <div class="card">
+    <h2>Task Completion</h2>
+    <button class="secondary" onclick="loadCompletions()">Refresh</button>
+    <div id="completionList"></div>
+  </div>
+</section>
+</main>
+
+<script>
+const SUPABASE_URL = "https://jknwczgzwfcaxvqrxevw.supabase.co";
+const SUPABASE_KEY = "sb_publishable_WeNx-axLcthwTqVYoPI0Gw_kemQdWYi";
+
+const db = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_KEY
+);
+
+let videos = [];
+
+function msg(text){
+  document.getElementById("message").textContent = text;
+}
+
+function esc(value){
+  return String(value ?? "").replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",
+    '"':"&quot;","'":"&#39;"
+  })[c]);
+}
+
+async function login(){
+  const email = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+
+  if(!email || !password){
+    msg("Email ও Password লিখুন।");
+    return;
+  }
+
+  msg("লগইন হচ্ছে...");
+
+  const {data,error} = await db.auth.signInWithPassword({
+    email,password
+  });
+
+  if(error){
+    msg("Login Error: " + error.message);
+    return;
+  }
+
+  await checkAdmin(data.user);
+}
+
+async function checkAdmin(user){
+  if(!user){
+    showLogin();
+    return;
+  }
+
+  const {data,error} = await db
+    .from("admin_users")
+    .select("user_id")
+    .eq("user_id",user.id)
+    .maybeSingle();
+
+  if(error || !data){
+    await db.auth.signOut();
+    showLogin();
+    msg("এই অ্যাকাউন্ট Admin অনুমোদিত নয়।");
+    return;
+  }
+
+  document.getElementById("loginSection").classList.add("hidden");
+  document.getElementById("panel").classList.remove("hidden");
+  document.getElementById("logoutBtn").classList.remove("hidden");
+
+  msg("Admin Login সফল হয়েছে।");
+  await refreshAll();
+}
+
+function showLogin(){
+  document.getElementById("loginSection").classList.remove("hidden");
+  document.getElementById("panel").classList.add("hidden");
+  document.getElementById("logoutBtn").classList.add("hidden");
+}
+
+async function logout(){
+  await db.auth.signOut();
+  showLogin();
+  msg("Logout হয়েছে।");
+}
+
+async function refreshAll(){
+  await loadVideos();
+  await loadStats();
+  await loadUsers();
+  await loadCompletions();
+}
+
+async function loadStats(){
+  const [v,p,u,c] = await Promise.all([
+    db.from("videos").select("*",{count:"exact",head:true}),
+    db.from("videos").select("*",{count:"exact",head:true}).eq("is_published",true),
+    db.from("app_users").select("*",{count:"exact",head:true}),
+    db.from("task_completions").select("*",{count:"exact",head:true})
+  ]);
+
+  document.getElementById("videoCount").textContent = v.count ?? 0;
+  document.getElementById("publishedCount").textContent = p.count ?? 0;
+  document.getElementById("userCount").textContent = u.count ?? 0;
+  document.getElementById("completionCount").textContent = c.count ?? 0;
+}
+
+async function loadVideos(){
+  const {data,error} = await db
+    .from("videos")
+    .select("*")
+    .order("sort_order",{ascending:true});
+
+  if(error){
+    msg("Videos Error: " + error.message);
+    return;
+  }
+
+  videos = data || [];
+
+  document.getElementById("videoList").innerHTML =
+    videos.length ? videos.map(v => `
+      <div class="video">
+        <b>${esc(v.title)}</b>
+        <p class="muted">${v.is_published ? "Published" : "Unpublished"}</p>
+        <button onclick="editVideo('${v.id}')">Edit</button>
+        <button class="secondary" onclick="chooseTasks('${v.id}')">Tasks</button>
+        <button class="danger" onclick="deleteVideo('${v.id}')">Delete</button>
+      </div>
+    `).join("") : "এখনো কোনো ভিডিও নেই।";
+
+  document.getElementById("taskVideo").innerHTML =
+    '<option value="">ভিডিও নির্বাচন করুন</option>' +
+    videos.map(v => `<option value="${v.id}">${esc(v.title)}</option>`).join("");
+}
+
+async function saveVideo(){
+  const id = document.getElementById("videoId").value;
+
+  const record = {
+    title:document.getElementById("title").value.trim(),
+    description:document.getElementById("description").value.trim(),
+    thumbnail_url:document.getElementById("thumbnail").value.trim(),
+    video_url:document.getElementById("videoUrl").value.trim(),
+    download_url:document.getElementById("downloadUrl").value.trim(),
+    sort_order:Number(document.getElementById("sortOrder").value || 0),
+    is_published:document.getElementById("published").checked
+  };
+
+  if(!record.title){
+    msg("ভিডিওর নাম লিখুন।");
+    return;
+  }
+
+  const result = id
+    ? await db.from("videos").update(record).eq("id",id)
+    : await db.from("videos").insert(record);
+
+  if(result.error){
+    msg("Save Error: " + result.error.message);
+    return;
+  }
+
+  msg("ভিডিও Save হয়েছে।");
+  clearForm();
+  await refreshAll();
+}
+
+function editVideo(id){
+  const v = videos.find(x => x.id === id);
+  if(!v) return;
+
+  document.getElementById("videoId").value = v.id;
+  document.getElementById("title").value = v.title || "";
+  document.getElementById("description").value = v.description || "";
+  document.getElementById("thumbnail").value = v.thumbnail_url || "";
+  document.getElementById("videoUrl").value = v.video_url || "";
+  document.getElementById("downloadUrl").value = v.download_url || "";
+  document.getElementById("sortOrder").value = v.sort_order ?? 0;
+  document.getElementById("published").checked = !!v.is_published;
+  document.getElementById("videoFormTitle").textContent = "ভিডিও Edit করুন";
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+
+function clearForm(){
+  ["videoId","title","description","thumbnail","videoUrl","downloadUrl"].forEach(id=>{
+    document.getElementById(id).value = "";
+  });
+  document.getElementById("sortOrder").value = 0;
+  document.getElementById("published").checked = false;
+  document.getElementById("videoFormTitle").textContent = "নতুন ভিডিও যোগ করুন";
+}
+
+async function deleteVideo(id){
+  if(!confirm("এই ভিডিও এবং এর Task মুছে ফেলতে চান?")) return;
+
+  const {error} = await db.from("videos").delete().eq("id",id);
+
+  if(error){
+    msg("Delete Error: " + error.message);
+    return;
+  }
+
+  msg("ভিডিও মুছে ফেলা হয়েছে।");
+  await refreshAll();
+}
+
+function chooseTasks(id){
+  document.getElementById("taskVideo").value = id;
+  loadTasks();
+  document.getElementById("taskEditor").scrollIntoView({behavior:"smooth"});
+}
+
+async function loadTasks(){
+  const videoId = document.getElementById("taskVideo").value;
+  const editor = document.getElementById("taskEditor");
+
+  if(!videoId){
+    editor.innerHTML = "";
+    return;
+  }
+
+  const {data,error} = await db
+    .from("video_tasks")
+    .select("*")
+    .eq("video_id",videoId)
+    .order("task_number");
+
+  if(error){
+    msg("Task Error: " + error.message);
+    return;
+  }
+
+  editor.innerHTML = [1,2,3,4].map(n=>{
+    const t = (data || []).find(x=>x.task_number === n) || {};
+    return `
+      <div class="taskbox">
+        <b>Task ${n}</b>
+        <label>Task Type</label>
+        <select id="type${n}">
+          <option value="ad_view" ${t.task_type==="ad_view"?"selected":""}>Ad View</option>
+          <option value="channel_join" ${t.task_type==="channel_join"?"selected":""}>Telegram Channel Join</option>
+        </select>
+        <label>Task Title</label>
+        <input id="taskTitle${n}" value="${esc(t.title || "")}" placeholder="Task-এর নাম">
+        <label>Target URL</label>
+        <input id="taskUrl${n}" value="${esc(t.target_url || "")}" placeholder="লিংক">
+      </div>
+    `;
+  }).join("");
+}
+
+async function saveTasks(){
+  const videoId = document.getElementById("taskVideo").value;
+
+  if(!videoId){
+    msg("আগে একটি ভিডিও নির্বাচন করুন।");
+    return;
+  }
+
+  const rows = [];
+
+  for(let n=1;n<=4;n++){
+    const title = document.getElementById("taskTitle"+n).value.trim();
+    const url = document.getElementById("taskUrl"+n).value.trim();
+
+    if(!title && !url) continue;
+
+    if(!title || !url){
+      msg("প্রতিটি Task-এর Title ও URL দুটোই দিন।");
+      return;
+    }
+
+    rows.push({
+      video_id:videoId,
+      task_number:n,
+      task_type:document.getElementById("type"+n).value,
+      title,
+      target_url:url
+    });
+  }
+
+  const {error:deleteError} = await db
+    .from("video_tasks")
+    .delete()
+    .eq("video_id",videoId);
+
+  if(deleteError){
+    msg("পুরোনো Task মুছতে সমস্যা: " + deleteError.message);
+    return;
+  }
+
+  if(rows.length){
+    const {error} = await db.from("video_tasks").insert(rows);
+
+    if(error){
+      msg("Task Save Error: " + error.message);
+      return;
+    }
+  }
+
+  msg("Task Save হয়েছে।");
+  await loadStats();
+}
+
+async function loadUsers(){
+  const box = document.getElementById("userList");
+  const {data,error} = await db
+    .from("app_users")
+    .select("*")
+    .order("created_at",{ascending:false})
+    .limit(100);
+
+  if(error){
+    box.textContent = "Users Error: " + error.message;
+    return;
+  }
+
+  box.innerHTML = (data || []).map(u=>`
+    <div class="video">
+      <b>${esc(u.first_name || "User")}</b>
+      <p class="muted">Telegram ID: ${esc(u.telegram_user_id)}</p>
+      <p class="muted">Username: ${esc(u.username || "-")}</p>
+    </div>
+  `).join("") || "কোনো User নেই।";
+}
+
+async function loadCompletions(){
+  const box = document.getElementById("completionList");
+  const {data,error} = await db
+    .from("task_completions")
+    .select("*")
+    .order("created_at",{ascending:false})
+    .limit(100);
+
+  if(error){
+    box.textContent = "Completion Error: " + error.message;
+    return;
+  }
+
+  box.innerHTML = (data || []).map(c=>`
+    <div class="video">
+      <b>${esc(c.telegram_user_id)}</b>
+      <p class="muted">Task ID: ${esc(c.task_id)}</p>
+      <p class="muted">Status: ${esc(c.status)}</p>
+    </div>
+  `).join("") || "কোনো Completion নেই।";
+}
+
+db.auth.getSession().then(({data})=>{
+  if(data.session) checkAdmin(data.session.user);
+});
+
+db.auth.onAuthStateChange((event,session)=>{
+  if(event === "SIGNED_OUT") showLogin();
+});
+</script>
+</body>
+</html>
