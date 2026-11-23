@@ -29,6 +29,8 @@ label{font-size:13px;color:#c4cee0}
 #message{padding:10px;color:#ffd166}
 </style>
 </head>
+  <link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#080d19">
 <body>
 
 <header>
@@ -469,6 +471,14 @@ db.auth.getSession().then(({data})=>{
 db.auth.onAuthStateChange((event,session)=>{
   if(event === "SIGNED_OUT") showLogin();
 });
+</script>
+  <script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js")
+      .catch(error => console.error("PWA Error:", error));
+  });
+}
 </script>
 </body>
 </html>
