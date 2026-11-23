@@ -1,0 +1,12 @@
+
+{
+  "name": "Mango Night Admin",
+  "short_name": "Mango Admin",
+  "description": "Mango Night Admin Panel",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#080d19",
+  "theme_color": "#080d19"
+}
